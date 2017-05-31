@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.linalg
 from copy import deepcopy
+from threading import Lock
 
 
 class UKF:
@@ -40,9 +41,11 @@ class UKF:
             self.covar_weights[i] = 1 / (2*(self.n_dim + self.lambd))
             self.mean_weights[i] = 1 / (2*(self.n_dim + self.lambd))
 
-        self.sigmas = self.get_sigmas()
+        self.sigmas = self.__get_sigmas()
 
-    def get_sigmas(self):
+        self.lock = Lock()
+
+    def __get_sigmas(self):
         """generates sigma points"""
         ret = np.zeros((self.n_sig, self.n_dim))
 
@@ -64,8 +67,9 @@ class UKF:
         :param states: list of indices of which states were measured, that is, which are being updated
         :param data: list of the data corresponding to the values in states
         :param r_matrix: error matrix for the data, again corresponding to the values in states
-        :return:
         """
+
+        self.lock.acquire()
 
         num_states = len(states)
 
@@ -87,34 +91,36 @@ class UKF:
                 x_diff[j][i] -= self.x[j]
 
         # covariance of measurement
-        P_yy = np.zeros((num_states,num_states))
+        p_yy = np.zeros((num_states, num_states))
         for i, val in enumerate(np.array_split(y_diff, self.n_sig, 1)):
-            P_yy += self.covar_weights[i] * val.dot(val.T)
+            p_yy += self.covar_weights[i] * val.dot(val.T)
 
         # add measurement noise
-        P_yy += r_matrix
+        p_yy += r_matrix
 
         # covariance of measurement with states
-        P_xy = np.zeros((self.n_dim, num_states))
+        p_xy = np.zeros((self.n_dim, num_states))
         for i, val in enumerate(zip(np.array_split(y_diff, self.n_sig, 1), np.array_split(x_diff, self.n_sig, 1))):
-            P_xy += self.covar_weights[i] * val[1].dot(val[0].T)
+            p_xy += self.covar_weights[i] * val[1].dot(val[0].T)
 
-        k = np.dot(P_xy, np.linalg.inv(P_yy))
+        k = np.dot(p_xy, np.linalg.inv(p_yy))
 
         y_actual = data
 
         self.x += np.dot(k, (y_actual - y_mean))
-        self.p -= np.dot(k, np.dot(P_yy, k.T))
-        # P = np.absolute(P)
+        self.p -= np.dot(k, np.dot(p_yy, k.T))
+        self.sigmas = self.__get_sigmas()
 
-        self.sigmas = self.get_sigmas()
-        return
+        self.lock.release()
 
     def predict(self, timestep):
         """
         performs a prediction step
         :param timestep: float, amount of time since last update
         """
+
+        self.lock.acquire()
+
         sigmas_out = np.array([self.iterate(x, timestep) for x in self.sigmas.T]).T
 
         x_out = np.zeros(self.n_dim)
@@ -143,11 +149,7 @@ class UKF:
         self.x = x_out
         self.p = p_out
 
-    def get_weights(self):
-        """
-        :return: mean weights (n_sig x 1), covariance weights (n_sig x 1)
-        """
-        return self.mean_weights, self.covar_weights
+        self.lock.release()
 
     def get_state(self):
         """

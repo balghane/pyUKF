@@ -7,6 +7,7 @@ import math
 
 
 def iterate_x(x_in, timestep):
+    '''this function is based on the x_dot and can be nonlinear as needed'''
     ret = np.zeros(len(x_in))
     ret[0] = x_in[0] + timestep * x_in[3] * math.cos(x_in[2])
     ret[1] = x_in[1] + timestep * x_in[3] * math.sin(x_in[2])
@@ -40,6 +41,8 @@ def main():
     r_encoder = np.zeros([1, 1])
     r_encoder[0][0] = 0.001
 
+    # pass all the parameters into the UKF!
+    # number of state variables, process noise, initial state, initial coariance, three tuning paramters, and the iterate function
     state_estimator = UKF(6, q, np.zeros(6), 0.0001*np.eye(6), 0.04, 0.0, 2.0, iterate_x)
 
     with open('example.csv', 'r') as csvfile:
@@ -47,6 +50,7 @@ def main():
         reader.next()
 
         last_time = 0
+        # read data
         for row in reader:
             row = [float(x) for x in row]
 
@@ -81,10 +85,6 @@ def main():
             print "Real state: ", real_state
             print "Estimated state: ", state_estimator.get_state()
             print "Difference: ", real_state - state_estimator.get_state()
-
-
-
-
 
 if __name__ == "__main__":
     main()

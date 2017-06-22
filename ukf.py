@@ -4,12 +4,16 @@ from copy import deepcopy
 from threading import Lock
 
 
+class UKFException(Exception):
+    """Raise for errors in the UKF, usually due to bad inputs"""
+
+
 class UKF:
     def __init__(self, num_states, process_noise, initial_state, initial_covar, alpha, k, beta, iterate_function):
         """
         Initializes the unscented kalman filter
         :param num_states: int, the size of the state
-        :param process_noise: the process noise covariance, should be num_states x num_states
+        :param process_noise: the process noise covariance per unit time, should be num_states x num_states
         :param initial_state: initial values for the states, should be num_states x 1
         :param initial_covar: initial covariance matrix, should be num_states x num_states, typically large and diagonal
         :param alpha: UKF tuning parameter, determines spread of sigma points, typically a small positive value
@@ -19,7 +23,7 @@ class UKF:
                     takes in a num_states x 1 state and a float timestep
                     returns a num_states x 1 state
         """
-        self.n_dim = num_states
+        self.n_dim = int(num_states)
         self.n_sig = 1 + num_states * 2
         self.q = process_noise
         self.x = initial_state
@@ -63,8 +67,8 @@ class UKF:
 
     def update(self, states, data, r_matrix):
         """
-        this function does a measurement update
-        :param states: list of indices of which states were measured, that is, which are being updated
+        performs a measurement update
+        :param states: list of indices (zero-indexed) of which states were measured, that is, which are being updated
         :param data: list of the data corresponding to the values in states
         :param r_matrix: error matrix for the data, again corresponding to the values in states
         """
@@ -116,7 +120,7 @@ class UKF:
     def predict(self, timestep):
         """
         performs a prediction step
-        :param timestep: float, amount of time since last update
+        :param timestep: float, amount of time since last prediction
         """
 
         self.lock.acquire()
@@ -143,7 +147,7 @@ class UKF:
             p_out += self.covar_weights[i] * np.dot(diff.T, diff)
 
         # add process noise
-        p_out += self.q
+        p_out += timestep * self.q
 
         self.sigmas = sigmas_out
         self.x = x_out
@@ -151,14 +155,39 @@ class UKF:
 
         self.lock.release()
 
-    def get_state(self):
+    def get_state(self, index=-1):
         """
-        :return: current state (n_dim x 1)
+        returns the current state (n_dim x 1), or a particular state variable (float)
+        :param index: optional, if provided, the index of the returned variable
+        :return:
         """
-        return self.x
+        if index >= 0:
+            return self.x[index]
+        else:
+            return self.x
 
     def get_covar(self):
         """
         :return: current state covariance (n_dim x n_dim)
         """
         return self.p
+
+    def set_state(self, value, index=-1):
+        """
+        Overrides the filter by setting one variable of the state or the whole state
+        :param value: the value to put into the state (1 x 1 or n_dim x 1)
+        :param index: the index at which to override the state (-1 for whole state)
+        """
+        if index != -1:
+            self.x[index] = value
+        else:
+            self.x = value
+
+    def reset(self, state, covar):
+        """
+        Restarts the UKF at the given state and covariance
+        :param state: n_dim x 1
+        :param covar: n_dim x n_dim
+        """
+        self.x = state
+        self.p = covar

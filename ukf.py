@@ -117,7 +117,7 @@ class UKF:
 
         self.lock.release()
 
-    def predict(self, timestep):
+    def predict(self, timestep, inputs=[]):
         """
         performs a prediction step
         :param timestep: float, amount of time since last prediction
@@ -125,7 +125,7 @@ class UKF:
 
         self.lock.acquire()
 
-        sigmas_out = np.array([self.iterate(x, timestep) for x in self.sigmas.T]).T
+        sigmas_out = np.array([self.iterate(x, timestep, inputs) for x in self.sigmas.T]).T
 
         x_out = np.zeros(self.n_dim)
 
@@ -178,10 +178,11 @@ class UKF:
         :param value: the value to put into the state (1 x 1 or n_dim x 1)
         :param index: the index at which to override the state (-1 for whole state)
         """
-        if index != -1:
-            self.x[index] = value
-        else:
-            self.x = value
+        with self.lock:
+            if index != -1:
+                self.x[index] = value
+            else:
+                self.x = value
 
     def reset(self, state, covar):
         """
@@ -189,5 +190,7 @@ class UKF:
         :param state: n_dim x 1
         :param covar: n_dim x n_dim
         """
-        self.x = state
-        self.p = covar
+
+        with self.lock:
+            self.x = state
+            self.p = covar

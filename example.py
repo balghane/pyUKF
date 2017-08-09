@@ -6,7 +6,7 @@ import numpy as np
 import math
 
 
-def iterate_x(x_in, timestep):
+def iterate_x(x_in, timestep, inputs):
     '''this function is based on the x_dot and can be nonlinear as needed'''
     ret = np.zeros(len(x_in))
     ret[0] = x_in[0] + timestep * x_in[3] * math.cos(x_in[2])

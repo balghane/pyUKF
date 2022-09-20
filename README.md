@@ -3,6 +3,8 @@ Written by Basel Alghanem at the University of Michigan ROAHM Lab and based on "
 
 # Examples
 Trying out the first example (example.py) should be really easy. It reads data from a provided csv and demonstrates the core functionality in a simple case. The system being modeled could be some kind of driving robot that has three sensors: an IMU measuring linear accelerations and angular velocities, a compass, and encoders measuring longitudinal velocity. The provided example trajectory runs at a constant longitudinal acceleration and yaw rate. The challenge of this example is tracking x and y position when they're not being directly measured. The dynamic model is described by the following:  
+$$a^2+b^2=c^2$$
+
 $$ X = \begin{bmatrix}|Pos_x|\\|Pos_y|\\Yaw \\Vel_{long}\\Vel_{yaw} \\Acc_{long}\\\end{bmatrix} = 
        \begin{bmatrix}x\\y\\\psi\\\upsilon\\\dot\psi\\\dot\upsilon\\\end{bmatrix}$$
 where 

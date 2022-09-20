@@ -32,7 +32,13 @@ class UKF:
         self.alpha = alpha
         self.k = k
         self.iterate = iterate_function
-
+        self.states = np.array([
+            [0,0,0,0,1,0],
+            [0,0,0,0,0,1],
+            [0,0,1,0,0,0],
+            [0,0,0,1,0,0]
+        ])
+        
         self.lambd = pow(self.alpha, 2) * (self.n_dim + self.k) - self.n_dim
 
         self.covar_weights = np.zeros(self.n_sig)
@@ -51,90 +57,66 @@ class UKF:
 
     def __get_sigmas(self):
         """generates sigma points"""
-        ret = np.zeros((self.n_sig, self.n_dim))
+        ret = np.zeros((self.n_dim , self.n_sig))
 
         tmp_mat = (self.n_dim + self.lambd)*self.p
-
-        # print spr_mat
         spr_mat = scipy.linalg.sqrtm(tmp_mat)
-
-        ret[0] = self.x
+        
+        ret[:,0:1] = self.x
         for i in range(self.n_dim):
-            ret[i+1] = self.x + spr_mat[i]
-            ret[i+1+self.n_dim] = self.x - spr_mat[i]
+            ret[:,i+1:i+2] = self.x + spr_mat[:,i:i+1] 
+            ret[:,i+1+self.n_dim:i+2+self.n_dim] = self.x - spr_mat[:,i:i+1]
 
-        return ret.T
+        return ret
 
-    def update(self, states, data, r_matrix):
+    def update(self, y_actual, r_matrix):
         """
         performs a measurement update
         :param states: list of indices (zero-indexed) of which states were measured, that is, which are being updated
         :param data: list of the data corresponding to the values in states
         :param r_matrix: error matrix for the data, again corresponding to the values in states
         """
-
         self.lock.acquire()
 
-        num_states = len(states)
-
+        num_states = len(self.states)
+        
         # create y, sigmas of just the states that are being updated
-        sigmas_split = np.split(self.sigmas, self.n_dim)
-        y = np.concatenate([sigmas_split[i] for i in states])
-
+        y = self.states @ self.sigmas 
         # create y_mean, the mean of just the states that are being updated
-        x_split = np.split(self.x, self.n_dim)
-        y_mean = np.concatenate([x_split[i] for i in states])
-
+        y_mean = self.states @ self.x
         # differences in y from y mean
-        y_diff = deepcopy(y)
-        x_diff = deepcopy(self.sigmas)
-        for i in range(self.n_sig):
-            for j in range(num_states):
-                y_diff[j][i] -= y_mean[j]
-            for j in range(self.n_dim):
-                x_diff[j][i] -= self.x[j]
-
+        y_diff = y - y_mean
+        x_diff = self.sigmas - self.x
         # covariance of measurement
         p_yy = np.zeros((num_states, num_states))
         for i, val in enumerate(np.array_split(y_diff, self.n_sig, 1)):
-            p_yy += self.covar_weights[i] * val.dot(val.T)
-
+            p_yy += self.covar_weights[i] * val @ val.T
         # add measurement noise
         p_yy += r_matrix
 
         # covariance of measurement with states
         p_xy = np.zeros((self.n_dim, num_states))
         for i, val in enumerate(zip(np.array_split(y_diff, self.n_sig, 1), np.array_split(x_diff, self.n_sig, 1))):
-            p_xy += self.covar_weights[i] * val[1].dot(val[0].T)
+            p_xy += self.covar_weights[i] * val[1] @ val[0].T
 
-        k = np.dot(p_xy, np.linalg.inv(p_yy))
-
-        y_actual = data
-
-        self.x += np.dot(k, (y_actual - y_mean))
-        self.p -= np.dot(k, np.dot(p_yy, k.T))
+        k = p_xy @ np.linalg.inv(p_yy)
+        self.x += k @ (y_actual - y_mean)
+        self.p -= k @ (p_yy @ k.T) 
         self.sigmas = self.__get_sigmas()
 
         self.lock.release()
 
-    def predict(self, timestep, inputs=[]):
+    def predict(self, timestep):
         """
         performs a prediction step
         :param timestep: float, amount of time since last prediction
         """
 
         self.lock.acquire()
-
-        sigmas_out = np.array([self.iterate(x, timestep, inputs) for x in self.sigmas.T]).T
-
-        x_out = np.zeros(self.n_dim)
-
-        # for each variable in X
-        for i in range(self.n_dim):
-            # the mean of that variable is the sum of
-            # the weighted values of that variable for each iterated sigma point
-            x_out[i] = sum((self.mean_weights[j] * sigmas_out[i][j] for j in range(self.n_sig)))
-
+        
+        sigmas_out = self.iterate(self.sigmas,timestep)
+        x_out = (sigmas_out @ self.mean_weights.reshape(-1,1))
+        
         p_out = np.zeros((self.n_dim, self.n_dim))
         # for each sigma point
         for i in range(self.n_sig):
@@ -142,10 +124,8 @@ class UKF:
             # make it a covariance by multiplying by the transpose
             # weight it using the calculated weighting factor
             # and sum
-            diff = sigmas_out.T[i] - x_out
-            diff = np.atleast_2d(diff)
-            p_out += self.covar_weights[i] * np.dot(diff.T, diff)
-
+            diff = sigmas_out[:,i:i+1] - x_out
+            p_out += self.covar_weights[i] * (diff @ diff.T)
         # add process noise
         p_out += timestep * self.q
 
